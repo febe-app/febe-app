@@ -4,7 +4,12 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon --config nodemon.json src/main.js"
+    "dev": "nodemon --config nodemon.json src/main.js",
+    "prod": "node src/main.js",
+    "docker:build": "docker build -t davidespo/febe-server .",
+    "docker:run": "docker run --rm -p 33030:3030 -t davidespo/febe-server",
+    "docker:push": "docker push davidespo/febe-server",
+    "deploy:dev": "kubectl apply -f k8s/dev.deployment.yaml"
   },
   "keywords": [],
   "author": "",
