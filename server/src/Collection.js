@@ -1,3 +1,5 @@
+const { collectionsDb, getDb } = require('./db.js');
+
 const to = (key, value) => {
   const record = Buffer.from(
     JSON.stringify({ key, value, updatedAt: Date.now() }),
@@ -11,6 +13,10 @@ class Collection {
   constructor(db) {
     this.db = db;
   }
+  /**
+   * See https://www.npmjs.com/package/levelup#dbcreatereadstreamoptions
+   * @param {*} options
+   */
   count(options) {
     return new Promise((res, rej) => {
       let count = 0;
@@ -45,6 +51,10 @@ class Collection {
     }
     return null;
   }
+  /**
+   * See https://www.npmjs.com/package/levelup#dbcreatereadstreamoptions
+   * @param {*} options
+   */
   list(options = {}) {
     options.keys = false;
     return new Promise((res, rej) => {
@@ -77,4 +87,42 @@ class Collection {
   }
 }
 
-module.exports = Collection;
+class CollectionRegistry {
+  constructor(db = collectionsDb) {
+    this.col = new Collection(db);
+    this.cols = {};
+  }
+  async list() {
+    return this.col.list();
+  }
+  async get(namespace) {
+    return this.col.get(namespace);
+  }
+  async getCol(namespace) {
+    if (!this.cols[namespace]) {
+      const ns = await this.get(namespace);
+      console.log({ ns });
+      if (!!ns) {
+        this.cols[namespace] = new Collection(
+          getDb({ realm: 'app' }, namespace),
+        );
+      }
+    }
+    return this.cols[namespace];
+  }
+  async save(namespace, options) {
+    return await this.col.put(namespace, { namespace, options });
+  }
+  async remove(namespace) {
+    delete this.cols[namespace];
+    return this.col.remove(namespace);
+  }
+}
+
+const collectionRegistry = new CollectionRegistry();
+
+module.exports = {
+  Collection,
+  CollectionRegistry,
+  collectionRegistry,
+};
