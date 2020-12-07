@@ -1,13 +1,22 @@
-const { collectionsDb, getDb } = require('./db.js');
+const _ = require('lodash');
+const { getDb, getCollectionsDb } = require('../db.js');
 
 const to = (key, value) => {
-  const record = Buffer.from(
-    JSON.stringify({ key, value, updatedAt: Date.now() }),
-  );
-  return record;
+  const row = { key, value, updatedAt: Date.now() };
+  const binRow = Buffer.from(JSON.stringify(row));
+  return { row, binRow };
 };
 
-const from = (data) => (!data ? null : JSON.parse(data.toString('utf8')));
+const from = (data) => {
+  if (!!data) {
+    try {
+      return JSON.parse(data.toString('utf8'));
+    } catch (err) {
+      return data.toString();
+    }
+  }
+  return null;
+};
 
 class Collection {
   constructor(db) {
@@ -36,11 +45,28 @@ class Collection {
         });
     });
   }
+  async info() {
+    const count = await this.count();
+    let first = null;
+    let last = null;
+    if (count > 0) {
+      first = (await this.list({ limit: 1 }))[0];
+      last = (await this.list({ limit: 1, reverse: true }))[0];
+      if (first.key === last.key) {
+        last = null;
+      }
+    }
+    return {
+      count,
+      first,
+      last,
+    };
+  }
   async put(key, value, ctx) {
     // TODO: updated by...
-    const record = to(key, value);
-    await this.db.put(key, record);
-    return { key, value, updatedAt: Date.now() };
+    const { row, binRow } = to(key, value);
+    await this.db.put(key, binRow);
+    return row;
   }
   async get(key) {
     try {
@@ -49,7 +75,7 @@ class Collection {
     } catch (error) {
       console.error(error);
     }
-    return null;
+    return { key, value: null };
   }
   /**
    * See https://www.npmjs.com/package/levelup#dbcreatereadstreamoptions
@@ -85,44 +111,61 @@ class Collection {
     }
     return curr;
   }
+  async truncate() {
+    const count = await this.count();
+    await this.db.clear();
+    return count;
+  }
 }
 
 class CollectionRegistry {
-  constructor(db = collectionsDb) {
+  constructor(projectId, db) {
+    this.projectId = projectId;
     this.col = new Collection(db);
+    this.ctx = { realm: 'app', projectId };
     this.cols = {};
   }
-  async list() {
+  count() {
+    return this.col.count();
+  }
+  info() {
+    return this.col.info();
+  }
+  list() {
     return this.col.list();
   }
-  async get(namespace) {
+  get(namespace) {
     return this.col.get(namespace);
   }
   async getCol(namespace) {
     if (!this.cols[namespace]) {
       const ns = await this.get(namespace);
-      console.log({ ns });
       if (!!ns) {
-        this.cols[namespace] = new Collection(
-          getDb({ realm: 'app' }, namespace),
-        );
+        this.cols[namespace] = new Collection(getDb(this.ctx, namespace));
       }
     }
     return this.cols[namespace];
   }
-  async save(namespace, options) {
-    return await this.col.put(namespace, { namespace, options });
+  save(namespace, options) {
+    return this.col.put(namespace, {
+      projectId: this.projectId,
+      namespace,
+      options,
+    });
   }
-  async remove(namespace) {
+  remove(namespace) {
     delete this.cols[namespace];
     return this.col.remove(namespace);
   }
+  truncate() {
+    return this.col.truncate();
+  }
 }
-
-const collectionRegistry = new CollectionRegistry();
+const getCollectionRegistry = (projectId) =>
+  new CollectionRegistry(projectId, getCollectionsDb(projectId));
 
 module.exports = {
   Collection,
   CollectionRegistry,
-  collectionRegistry,
+  getCollectionRegistry,
 };

@@ -12,4 +12,4 @@ RUN npm ci --only=production
 COPY . .
 
 EXPOSE 3030
-CMD [ "npm", "run", "prod" ]
+CMD [ "npm", "start" ]
